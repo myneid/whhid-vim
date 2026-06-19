@@ -96,7 +96,7 @@ enddef
 def OpenBoardBuffer(): void
   var winnr = bufwinnr(BUFNAME)
   if winnr > 0
-    exe $'{winnr}wincmd w'
+    win_gotoid(win_getid(winnr))
     return
   endif
   exe 'topleft vsplit ' .. BUFNAME
@@ -119,7 +119,7 @@ enddef
 def RenderBoard(board: dict<any>): void
   var winnr = bufwinnr(BUFNAME)
   if winnr < 0 | return | endif
-  exe $'{winnr}wincmd w'
+  win_gotoid(win_getid(winnr))
 
   line_map = {}
   var lines: list<string> = [$' {board.name}', '']
