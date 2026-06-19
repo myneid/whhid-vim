@@ -55,10 +55,11 @@ def HandleResponse(output: list<string>, status: number, Callback: func(any), Er
     return
   endif
 
+  var preview = raw->strpart(0, 200)
   try
     var resp = json_decode(raw)
     if type(resp) != v:t_dict
-      ErrCallback($'Unexpected response type: {raw[:200]}')
+      ErrCallback($'Unexpected response type: {preview}')
       return
     endif
     if has_key(resp, 'error')
@@ -66,7 +67,7 @@ def HandleResponse(output: list<string>, status: number, Callback: func(any), Er
       return
     endif
     if !has_key(resp, 'result')
-      ErrCallback($'No result in response: {raw[:200]}')
+      ErrCallback($'No result in response: {preview}')
       return
     endif
     var content = get(resp.result, 'content', [])
@@ -81,7 +82,7 @@ def HandleResponse(output: list<string>, status: number, Callback: func(any), Er
     endif
     Callback(json_decode(text))
   catch
-    ErrCallback($'Parse error ({v:exception}): {raw[:200]}')
+    ErrCallback($'Parse error ({v:exception}): {preview}')
   endtry
 enddef
 
