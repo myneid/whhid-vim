@@ -1,0 +1,78 @@
+*whhid.txt*  WHHID board management inside Vim
+
+                    What The Hell Have I Done — Vim Plugin
+                         https://whatthehellhaveidone.net
+
+==============================================================================
+CONTENTS                                                        *whhid-contents*
+
+  1. Setup .......... |whhid-setup|
+  2. Commands ....... |whhid-commands|
+  3. Board view ..... |whhid-board|
+  4. Card detail .... |whhid-card|
+  5. Configuration .. |whhid-config|
+
+==============================================================================
+SETUP                                                              *whhid-setup*
+
+1. Add your API token (from whhid.com → Settings → API Tokens): >
+     :let g:whhid_token = 'your-token-here'
+<  Or just run any WHHID command and you will be prompted to enter it.
+   The token is saved to ~/.vim/whhid.json so you only need to do this once.
+
+2. Link a board to the current working directory: >
+     :WhhidLink
+<
+3. Open the board sidebar: >
+     :WhhidOpen
+<
+==============================================================================
+COMMANDS                                                        *whhid-commands*
+
+:WhhidOpen                                                        *:WhhidOpen*
+  Open the board sidebar for the linked board.
+
+:WhhidLink                                                        *:WhhidLink*
+  Interactively pick a project and board to link to the current directory.
+  The link is stored per working directory in ~/.vim/whhid.json.
+
+:WhhidUnlink                                                    *:WhhidUnlink*
+  Remove the board link for the current working directory.
+
+==============================================================================
+BOARD VIEW                                                        *whhid-board*
+
+The board opens in a left split (40 columns). Keys: >
+
+  <CR>   Open card detail popup
+  m      Move card to another column
+  a      Copy card as AI prompt (to clipboard/unnamed register)
+  r      Refresh board from server
+  q      Close the board
+
+==============================================================================
+CARD DETAIL                                                        *whhid-card*
+
+A popup shows full card details: title, priority, assignee, due date, GitHub
+link, labels, description, checklists, and comments. Keys: >
+
+  m      Move card to another column
+  a      Copy card as AI prompt
+  j/k    Scroll popup
+  q/<Esc>  Close
+
+==============================================================================
+CONFIGURATION                                                    *whhid-config*
+
+*g:whhid_token*
+  Your WHHID API token. Set in vimrc or entered interactively on first use.
+
+*g:whhid_mcp_url*
+  MCP server URL. Default: https://whatthehellhaveidone.net/mcp/whhid
+
+==============================================================================
+LICENSE                                                          *whhid-license*
+
+WTFPL — Do What The Fuck You Want To Public License.
+
+ vim:tw=78:ts=8:ft=help:norl:
