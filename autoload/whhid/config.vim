@@ -51,7 +51,7 @@ export def GetBoardId(): number
   var cfg = Load()
   var workspaces: dict<any> = get(cfg, 'workspaces', {})
   if has_key(workspaces, cwd)
-    return workspaces[cwd]->str2nr()
+    return workspaces[cwd]->string()->str2nr()
   endif
   return -1
 enddef
