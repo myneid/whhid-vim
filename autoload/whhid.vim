@@ -99,7 +99,8 @@ def OpenBoardBuffer(): void
     exe $'{winnr}wincmd w'
     return
   endif
-  exe $'topleft 40vsplit {BUFNAME}'
+  exe 'topleft vsplit ' .. BUFNAME
+  vertical resize 40
   setlocal buftype=nofile bufhidden=wipe noswapfile nowrap nobuflisted
   setlocal cursorline signcolumn=no nonumber norelativenumber
   setlocal filetype=whhid
