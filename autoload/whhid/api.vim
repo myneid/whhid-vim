@@ -1,7 +1,5 @@
 vim9script
 
-# Low-level MCP tool caller. Calls Callback(result_dict) on success,
-# ErrCallback(message) on failure.
 export def CallTool(name: string, args: dict<any>, Callback: func(any), ErrCallback: func(string)): void
   var token = get(g:, 'whhid_token', '')
   if empty(token)
@@ -18,45 +16,84 @@ export def CallTool(name: string, args: dict<any>, Callback: func(any), ErrCallb
   })
 
   var output: list<string> = []
-  job_start(
+
+  var job = job_start(
     ['curl', '-s', '-X', 'POST', url,
       '-H', 'Content-Type: application/json',
       '-H', 'Accept: application/json',
       '-H', $'Authorization: Bearer {token}',
       '--data-raw', body],
     {
-      out_cb: (ch, line) => add(output, line),
-      exit_cb: (job, status) => {
-        if status != 0
-          ErrCallback($'curl exited with status {status}')
-          return
-        endif
-        var raw = join(output, '')
-        try
-          var resp = json_decode(raw)
-          if has_key(resp, 'error')
-            ErrCallback(resp.error.message)
-            return
-          endif
-          var text = resp.result.content[0].text
-          Callback(json_decode(text))
-        catch
-          ErrCallback($'JSON parse error: {v:exception}')
-        endtry
+      out_cb: (ch, line) => {
+        add(output, line)
+      },
+      exit_cb: (j, status) => {
+        HandleResponse(output, status, Callback, ErrCallback)
       }
     }
   )
+
+  if job_status(job) ==# 'fail'
+    ErrCallback('Failed to start curl — is curl installed?')
+  endif
+enddef
+
+def HandleResponse(output: list<string>, status: number, Callback: func(any), ErrCallback: func(string)): void
+  if status != 0
+    ErrCallback($'curl exited with status {status}')
+    return
+  endif
+
+  # Strip SSE "data: " prefixes if the server returned event-stream format
+  var lines = mapnew(output, (_, l) => l =~# '^data: ' ? l[6 :] : l)
+  # Drop SSE control lines (empty, "event:", "id:", etc.)
+  lines = filter(lines, (_, l) => l =~# '^{')
+
+  var raw = join(lines, '')
+  if empty(raw)
+    ErrCallback('Empty response from server')
+    return
+  endif
+
+  try
+    var resp = json_decode(raw)
+    if type(resp) != v:t_dict
+      ErrCallback($'Unexpected response type: {raw[:200]}')
+      return
+    endif
+    if has_key(resp, 'error')
+      ErrCallback($'MCP error: {resp.error.message}')
+      return
+    endif
+    if !has_key(resp, 'result')
+      ErrCallback($'No result in response: {raw[:200]}')
+      return
+    endif
+    var content = get(resp.result, 'content', [])
+    if empty(content)
+      ErrCallback('Empty content in result')
+      return
+    endif
+    var text = get(content[0], 'text', '')
+    if empty(text)
+      ErrCallback('No text in content block')
+      return
+    endif
+    Callback(json_decode(text))
+  catch
+    ErrCallback($'Parse error ({v:exception}): {raw[:200]}')
+  endtry
 enddef
 
 export def ListProjects(Callback: func(any), Err: func(string)): void
   CallTool('list-projects-tool', {}, (data) => {
-    Callback(type(data) == v:t_list ? data : data.data)
+    Callback(type(data) == v:t_list ? data : get(data, 'data', []))
   }, Err)
 enddef
 
 export def ListBoards(projectId: number, Callback: func(any), Err: func(string)): void
   CallTool('list-boards-tool', {project_id: projectId}, (data) => {
-    Callback(type(data) == v:t_list ? data : data.data)
+    Callback(type(data) == v:t_list ? data : get(data, 'data', []))
   }, Err)
 enddef
 

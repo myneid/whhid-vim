@@ -38,32 +38,44 @@ export def Link(): void
   endif
   echo 'WHHID: loading projects…'
   Api.ListProjects((projects) => {
+    if empty(projects)
+      EchoErr('No projects found')
+      return
+    endif
     var labels = mapnew(projects, (_, p) => p.name)
     popup_menu(labels, {
       title: ' Select project ',
       border: [1, 1, 1, 1],
       padding: [0, 1, 0, 1],
-      callback: (_, idx) => {
-        if idx < 1 | return | endif
-        var project = projects[idx - 1]
-        echo $'WHHID: loading boards for {project.name}…'
-        Api.ListBoards(project.id, (boards) => {
-          var bnames = mapnew(boards, (_, b) => b.name)
-          popup_menu(bnames, {
-            title: ' Select board ',
-            border: [1, 1, 1, 1],
-            padding: [0, 1, 0, 1],
-            callback: (_, bidx) => {
-              if bidx < 1 | return | endif
-              var board = boards[bidx - 1]
-              Cfg.SetBoardId(board.id)
-              echo $'WHHID: linked to "{board.name}"'
-            }
-          })
-        }, (err) => EchoErr(err))
-      }
+      callback: (_, idx) => PickProject(projects, idx)
     })
   }, (err) => EchoErr(err))
+enddef
+
+def PickProject(projects: list<any>, idx: number): void
+  if idx < 1 | return | endif
+  var project = projects[idx - 1]
+  echo $'WHHID: loading boards for {project.name}…'
+  Api.ListBoards(project.id, (boards) => {
+    if empty(boards)
+      EchoErr($'No boards found in project "{project.name}"')
+      return
+    endif
+    var bnames = mapnew(boards, (_, b) => b.name)
+    popup_menu(bnames, {
+      title: ' Select board ',
+      border: [1, 1, 1, 1],
+      padding: [0, 1, 0, 1],
+      callback: (_, bidx) => PickBoard(boards, bidx)
+    })
+  }, (err) => EchoErr(err))
+enddef
+
+def PickBoard(boards: list<any>, bidx: number): void
+  if bidx < 1 | return | endif
+  var board = boards[bidx - 1]
+  Cfg.SetBoardId(board.id)
+  echo $'WHHID: linked to "{board.name}"'
 enddef
 
 export def Unlink(): void
