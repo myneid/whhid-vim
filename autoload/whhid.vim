@@ -3,16 +3,16 @@ vim9script
 import autoload 'whhid/api.vim' as Api
 import autoload 'whhid/config.vim' as Cfg
 
-# ── board buffer name ────────────────────────────────────────────────────────
 const BUFNAME = '__whhid_board__'
 
-# line → {type: 'card'|'list', card: dict, list: dict}
 var line_map: dict<dict<any>> = {}
-# current board data (lists + cards)
 var current_board: dict<any> = {}
-# stash for link flow (can't close over vars across async boundaries in Vim9)
+
+# stash for link flow — Vim9 can't close over vars across async boundaries
 var link_projects: list<any> = []
 var link_boards: list<any> = []
+# stash for move flow
+var move_card_ref: dict<any> = {}
 
 # ── public commands ──────────────────────────────────────────────────────────
 
@@ -28,10 +28,7 @@ export def Open(): void
   endif
   OpenBoardBuffer()
   echo 'WHHID: loading board…'
-  Api.GetBoard(board_id, (board) => {
-    current_board = board
-    RenderBoard(board)
-  }, (err) => EchoErr(err))
+  Api.GetBoard(board_id, OnBoardLoaded, (err) => EchoErr(err))
 enddef
 
 export def Link(): void
@@ -40,40 +37,51 @@ export def Link(): void
     return
   endif
   echo 'WHHID: loading projects…'
-  Api.ListProjects((projects) => {
-    if empty(projects)
-      EchoErr('No projects found')
-      return
-    endif
-    link_projects = projects
-    var labels = mapnew(projects, (_, p) => p.name)
-    popup_menu(labels, {
-      title: ' Select project ',
-      border: [1, 1, 1, 1],
-      padding: [0, 1, 0, 1],
-      callback: (_, idx) => PickProject(idx)
-    })
-  }, (err) => EchoErr(err))
+  Api.ListProjects(OnProjectsLoaded, (err) => EchoErr(err))
+enddef
+
+export def Unlink(): void
+  Cfg.SetBoardId(-1)
+  echo 'WHHID: board unlinked'
+enddef
+
+# ── link flow callbacks ──────────────────────────────────────────────────────
+
+def OnProjectsLoaded(projects: any): void
+  if empty(projects)
+    EchoErr('No projects found')
+    return
+  endif
+  link_projects = projects
+  var labels = mapnew(link_projects, (_, p) => p.name)
+  popup_menu(labels, {
+    title: ' Select project ',
+    border: [1, 1, 1, 1],
+    padding: [0, 1, 0, 1],
+    callback: (_, idx) => PickProject(idx)
+  })
 enddef
 
 def PickProject(idx: number): void
   if idx < 1 | return | endif
   var project = link_projects[idx - 1]
   echo $'WHHID: loading boards for {project.name}…'
-  Api.ListBoards(project.id, (boards) => {
-    if empty(boards)
-      EchoErr($'No boards found in project "{project.name}"')
-      return
-    endif
-    link_boards = boards
-    var bnames = mapnew(boards, (_, b) => b.name)
-    popup_menu(bnames, {
-      title: ' Select board ',
-      border: [1, 1, 1, 1],
-      padding: [0, 1, 0, 1],
-      callback: (_, bidx) => PickBoard(bidx)
-    })
-  }, (err) => EchoErr(err))
+  Api.ListBoards(project.id, OnBoardsLoaded, (err) => EchoErr(err))
+enddef
+
+def OnBoardsLoaded(boards: any): void
+  if empty(boards)
+    EchoErr('No boards found in this project')
+    return
+  endif
+  link_boards = boards
+  var bnames = mapnew(link_boards, (_, b) => b.name)
+  popup_menu(bnames, {
+    title: ' Select board ',
+    border: [1, 1, 1, 1],
+    padding: [0, 1, 0, 1],
+    callback: (_, bidx) => PickBoard(bidx)
+  })
 enddef
 
 def PickBoard(bidx: number): void
@@ -83,31 +91,28 @@ def PickBoard(bidx: number): void
   echo $'WHHID: linked to "{board.name}"'
 enddef
 
-export def Unlink(): void
-  Cfg.SetBoardId(-1)
-  echo 'WHHID: board unlinked'
-enddef
-
 # ── board buffer ─────────────────────────────────────────────────────────────
 
 def OpenBoardBuffer(): void
-  # reuse existing window if open
   var winnr = bufwinnr(BUFNAME)
   if winnr > 0
     exe $'{winnr}wincmd w'
     return
   endif
-  # open a left split
   exe $'topleft 40vsplit {BUFNAME}'
   setlocal buftype=nofile bufhidden=wipe noswapfile nowrap nobuflisted
   setlocal cursorline signcolumn=no nonumber norelativenumber
   setlocal filetype=whhid
-  # mappings
   nnoremap <buffer> <CR>  <ScriptCmd>BoardEnter()<CR>
   nnoremap <buffer> m     <ScriptCmd>BoardMove()<CR>
   nnoremap <buffer> a     <ScriptCmd>BoardSendToAI()<CR>
   nnoremap <buffer> r     <ScriptCmd>BoardRefresh()<CR>
   nnoremap <buffer> q     <ScriptCmd>close<CR>
+enddef
+
+def OnBoardLoaded(board: any): void
+  current_board = board
+  RenderBoard(board)
 enddef
 
 def RenderBoard(board: dict<any>): void
@@ -140,22 +145,19 @@ def RenderBoard(board: dict<any>): void
 enddef
 
 def BoardEnter(): void
-  var lnum = line('.')
-  var entry = get(line_map, string(lnum), {})
+  var entry = get(line_map, string(line('.')), {})
   if empty(entry) || entry.type != 'card' | return | endif
   OpenCardDetail(entry.card)
 enddef
 
 def BoardMove(): void
-  var lnum = line('.')
-  var entry = get(line_map, string(lnum), {})
+  var entry = get(line_map, string(line('.')), {})
   if empty(entry) || entry.type != 'card' | return | endif
   MoveCardUI(entry.card)
 enddef
 
 def BoardSendToAI(): void
-  var lnum = line('.')
-  var entry = get(line_map, string(lnum), {})
+  var entry = get(line_map, string(line('.')), {})
   if empty(entry) || entry.type != 'card' | return | endif
   echo 'WHHID: loading card…'
   Api.GetCard(entry.card.id, (card) => SendToAI(card), (err) => EchoErr(err))
@@ -165,32 +167,25 @@ def BoardRefresh(): void
   var board_id = Cfg.GetBoardId()
   if board_id == -1 | return | endif
   echo 'WHHID: refreshing…'
-  Api.GetBoard(board_id, (board) => {
-    current_board = board
-    RenderBoard(board)
-    echo 'WHHID: refreshed'
-  }, (err) => EchoErr(err))
+  Api.GetBoard(board_id, (board) => OnBoardLoaded(board), (err) => EchoErr(err))
 enddef
 
 # ── card detail popup ────────────────────────────────────────────────────────
 
 def OpenCardDetail(card: dict<any>): void
   echo 'WHHID: loading card…'
-  Api.GetCard(card.id, (full) => ShowCardPopup(full), (err) => EchoErr(err))
+  Api.GetCard(card.id, ShowCardPopup, (err) => EchoErr(err))
 enddef
 
-def ShowCardPopup(card: dict<any>): void
+def ShowCardPopup(card: any): void
   var lines: list<string> = []
-
   add(lines, $' {card.title}')
   add(lines, repeat('─', 50))
 
   var priority = get(card, 'priority', '')
   if !empty(priority) | add(lines, $' Priority : {priority}') | endif
-  var assignee = get(card, 'assignee', v:none)
-  if assignee isnot v:none && !empty(assignee)
-    add(lines, $' Assignee : {assignee.name}')
-  endif
+  var assignee = get(card, 'assignee', {})
+  if !empty(assignee) | add(lines, $' Assignee : {assignee.name}') | endif
   var due = get(card, 'due_date', '')
   if !empty(due) | add(lines, $' Due      : {due}') | endif
   var gh = get(card, 'github_link', '')
@@ -229,10 +224,10 @@ def ShowCardPopup(card: dict<any>): void
   add(lines, repeat('─', 50))
   add(lines, '  [m] move   [a] send to AI   [q] close')
 
-  # calculate popup size
   var width = max(mapnew(lines, (_, l) => strwidth(l))) + 2
   var height = min([len(lines), &lines - 6])
 
+  move_card_ref = card
   popup_create(lines, {
     title: ' Card ',
     border: [1, 1, 1, 1],
@@ -243,73 +238,77 @@ def ShowCardPopup(card: dict<any>): void
     maxheight: height,
     scrollbar: 1,
     mapping: 0,
-    filter: (winid, key) => CardPopupFilter(winid, key, card),
+    filter: CardPopupFilter,
   })
 enddef
 
-def CardPopupFilter(winid: number, key: string, card: dict<any>): bool
+def CardPopupFilter(winid: number, key: string): bool
   if key == 'q' || key == "\<Esc>"
     popup_close(winid)
-    return true
   elseif key == 'm'
     popup_close(winid)
-    MoveCardUI(card)
-    return true
+    MoveCardUI(move_card_ref)
   elseif key == 'a'
     popup_close(winid)
-    echo 'WHHID: loading card…'
-    Api.GetCard(card.id, (full) => SendToAI(full), (err) => EchoErr(err))
-    return true
+    SendToAI(move_card_ref)
   elseif key == "\<ScrollWheelUp>" || key == 'k'
     win_execute(winid, "normal! \<C-y>")
-    return true
   elseif key == "\<ScrollWheelDown>" || key == 'j'
     win_execute(winid, "normal! \<C-e>")
-    return true
   endif
-  return false
+  return true
 enddef
 
 # ── move card ────────────────────────────────────────────────────────────────
 
 def MoveCardUI(card: dict<any>): void
+  move_card_ref = card
   var lists = get(current_board, 'lists', [])
   if empty(lists)
     var board_id = Cfg.GetBoardId()
     if board_id == -1 | return | endif
-    Api.GetBoard(board_id, (board) => {
-      current_board = board
-      PickList(card, board.lists)
-    }, (err) => EchoErr(err))
+    Api.GetBoard(board_id, OnBoardForMove, (err) => EchoErr(err))
   else
-    PickList(card, lists)
+    PickList(lists)
   endif
 enddef
 
-def PickList(card: dict<any>, lists: list<any>): void
-  var other_lists = filter(copy(lists), (_, l) => l.id != get(card, 'list_id', -1))
-  var labels = mapnew(other_lists, (_, l) => l.name)
+def OnBoardForMove(board: any): void
+  current_board = board
+  PickList(board.lists)
+enddef
+
+def PickList(lists: list<any>): void
+  var other = filter(copy(lists), (_, l) => l.id != get(move_card_ref, 'list_id', -1))
+  if empty(other)
+    EchoErr('No other columns to move to')
+    return
+  endif
+  var labels = mapnew(other, (_, l) => l.name)
   popup_menu(labels, {
     title: ' Move to column ',
     border: [1, 1, 1, 1],
     padding: [0, 1, 0, 1],
-    callback: (_, idx) => {
-      if idx < 1 | return | endif
-      var target = other_lists[idx - 1]
-      echo $'WHHID: moving to "{target.name}"…'
-      Api.MoveCard(card.id, target.id, () => {
-        echo $'WHHID: moved to "{target.name}"'
-        BoardRefresh()
-      }, (err) => EchoErr(err))
-    }
+    callback: (_, idx) => DoMoveCard(other, idx)
   })
+enddef
+
+def DoMoveCard(lists: list<any>, idx: number): void
+  if idx < 1 | return | endif
+  var target = lists[idx - 1]
+  echo $'WHHID: moving to "{target.name}"…'
+  Api.MoveCard(move_card_ref.id, target.id, OnCardMoved, (err) => EchoErr(err))
+enddef
+
+def OnCardMoved(): void
+  echo 'WHHID: moved'
+  BoardRefresh()
 enddef
 
 # ── send to AI ───────────────────────────────────────────────────────────────
 
 def SendToAI(card: dict<any>): void
-  var lines: list<string> = []
-  add(lines, $'# Task: {card.title}')
+  var lines: list<string> = [$'# Task: {card.title}']
   var priority = get(card, 'priority', '')
   if !empty(priority) | add(lines, $'**Priority:** {priority}') | endif
   var due = get(card, 'due_date', '')
@@ -330,8 +329,7 @@ def SendToAI(card: dict<any>): void
     add(lines, '')
     add(lines, $'## {cl.title}')
     for item in get(cl, 'items', [])
-      var tick = item.completed ? 'x' : ' '
-      add(lines, $'- [{tick}] {item.title}')
+      add(lines, $'- [{item.completed ? "x" : " "}] {item.title}')
     endfor
   endfor
   for cm in get(card, 'comments', [])
@@ -345,7 +343,7 @@ def SendToAI(card: dict<any>): void
   var prompt = join(lines, "\n")
   setreg('+', prompt)
   setreg('"', prompt)
-  echo 'WHHID: card prompt copied to clipboard — paste into your AI assistant'
+  echo 'WHHID: card prompt copied to clipboard'
 enddef
 
 # ── helpers ──────────────────────────────────────────────────────────────────
