@@ -10,6 +10,9 @@ const BUFNAME = '__whhid_board__'
 var line_map: dict<dict<any>> = {}
 # current board data (lists + cards)
 var current_board: dict<any> = {}
+# stash for link flow (can't close over vars across async boundaries in Vim9)
+var link_projects: list<any> = []
+var link_boards: list<any> = []
 
 # ── public commands ──────────────────────────────────────────────────────────
 
@@ -42,38 +45,40 @@ export def Link(): void
       EchoErr('No projects found')
       return
     endif
+    link_projects = projects
     var labels = mapnew(projects, (_, p) => p.name)
     popup_menu(labels, {
       title: ' Select project ',
       border: [1, 1, 1, 1],
       padding: [0, 1, 0, 1],
-      callback: (_, idx) => PickProject(projects, idx)
+      callback: (_, idx) => PickProject(idx)
     })
   }, (err) => EchoErr(err))
 enddef
 
-def PickProject(projects: list<any>, idx: number): void
+def PickProject(idx: number): void
   if idx < 1 | return | endif
-  var project = projects[idx - 1]
+  var project = link_projects[idx - 1]
   echo $'WHHID: loading boards for {project.name}…'
   Api.ListBoards(project.id, (boards) => {
     if empty(boards)
       EchoErr($'No boards found in project "{project.name}"')
       return
     endif
+    link_boards = boards
     var bnames = mapnew(boards, (_, b) => b.name)
     popup_menu(bnames, {
       title: ' Select board ',
       border: [1, 1, 1, 1],
       padding: [0, 1, 0, 1],
-      callback: (_, bidx) => PickBoard(boards, bidx)
+      callback: (_, bidx) => PickBoard(bidx)
     })
   }, (err) => EchoErr(err))
 enddef
 
-def PickBoard(boards: list<any>, bidx: number): void
+def PickBoard(bidx: number): void
   if bidx < 1 | return | endif
-  var board = boards[bidx - 1]
+  var board = link_boards[bidx - 1]
   Cfg.SetBoardId(board.id)
   echo $'WHHID: linked to "{board.name}"'
 enddef
